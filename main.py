@@ -7,7 +7,7 @@ import time
 # ==========================================
 # ⚠️ YAHAN APNA BOT TOKEN DALAIN ⚠️
 # ==========================================
-BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN_HERE" 
+BOT_TOKEN = "8715170557:AAEHZ9mfr93Hy2sVBh9ElD9qpTHXGYvFryc" 
 
 # Bot ko initialize karein
 bot = telebot.TeleBot(BOT_TOKEN)
