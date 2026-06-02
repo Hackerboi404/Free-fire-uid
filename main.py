@@ -1,3 +1,4 @@
+import os
 import logging
 import sqlite3
 from flask import Flask, request
@@ -5,11 +6,14 @@ from telegram import Update, BotCommand, ChatPermissions
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackContext
 
 # --- CONFIGURATION ---
-BOT_TOKEN = "8256719910:AAF3QNlPjLb4syec3ACHGINVf60fbk1qT2s"  # Apna Bot Token yahan daalein
-OWNER_ID = 8933398320                # Apna Telegram User ID yahan daalein (Integer mein)
+# Render Environment Variables se uthaenge agar nahi hai to default use karenge
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE") 
+OWNER_ID = int(os.environ.get("OWNER_ID", "123456789"))
 PORT = int(os.environ.get("PORT", 8443))
-# Render par domain name likhein, jaise: https://your-app-name.onrender.com
-WEBHOOK_URL = "https://your-app-name.onrender.com/webhook" 
+
+# Render par domain name yahan sahi daalein (Webhook URL)
+# Iska naam aapko pata hoga render par, jaise: https://your-bot-name.onrender.com
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://your-bot-name.onrender.com/webhook")
 
 # --- DATABASE SETUP ---
 def init_db():
@@ -18,7 +22,7 @@ def init_db():
     # Auth Users Table
     c.execute('''CREATE TABLE IF NOT EXISTS auth_users (user_id INTEGER PRIMARY KEY)''')
     # Punished Users Table
-    c.execute('''CREATE TABLE IF NOT EXISTS punished_users (chat_id INTEGER, user_id INTEGER, PRIMARY KEY (chat_id, user_id))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS punished_users (chat_id INTEGER, user_id, PRIMARY KEY (chat_id, user_id))''')
     conn.commit()
     conn.close()
 
@@ -79,7 +83,6 @@ def unpunish_user(chat_id, user_id):
 
 # --- AUTH CHECK DECORATOR ---
 # Yeh function check karega ki command sirf Owner ya Authorized user hi chala sake
-# Admin check ki zaroorat nahi agar Owner chala raha hai.
 async def check_permission(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if is_authorized(user_id):
@@ -90,7 +93,7 @@ async def check_permission(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- COMMAND HANDLERS ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Bot main active hai! Commands use karne ke liye authorized rahiye.")
+    await update.message.reply_text("Bot active hai! Commands use karne ke liye authorized rahiye.")
 
 # 1. Auth Commands (Sirf Owner)
 async def auth(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -134,11 +137,9 @@ async def ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_permission(update, context): return
     if not context.args:
-        await update.message.reply_text("Usage: /unban <user_id> ya username")
+        await update.message.reply_text("Usage: /unban <user_id>")
         return
-    # Yahan simple logic hai, proper user ID fetch karna better hai
     try:
-        # Agar user ID dia hai to
         uid = int(context.args[0])
         await context.bot.unban_chat_member(chat_id=update.effective_chat.id, user_id=uid)
         await update.message.reply_text(f"✅ User {uid} ko unban kar diya.")
@@ -179,7 +180,7 @@ async def kick(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.message.reply_to_message.from_user
         try:
             await context.bot.ban_chat_member(chat_id=update.effective_chat.id, user_id=user.id)
-            await context.bot.unban_chat_member(chat_id=update.effective_chat.id, user_id=user.id) # Immediately unban to kick
+            await context.bot.unban_chat_member(chat_id=update.effective_chat.id, user_id=user.id) 
             await update.message.reply_text(f"👢 {user.first_name} ko kick kar diya gaya.")
         except Exception as e:
             await update.message.reply_text(f"Error: {e}")
@@ -209,10 +210,6 @@ async def unpunish(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Auto-Delete Handler (Punish Logic)
 async def auto_delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Agar command hai to ignore karein
-    if update.message and update.message.text and update.message.text.startswith('/'):
-        return
-
     if update.effective_user:
         chat_id = update.effective_chat.id
         user_id = update.effective_user.id
@@ -221,7 +218,7 @@ async def auto_delete_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             try:
                 await update.message.delete()
             except:
-                pass # Message delete nahi hua (shayad purana ho ya bot admin na ho)
+                pass 
 
 # 6. Purge
 async def purge(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -229,7 +226,7 @@ async def purge(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.reply_to_message:
         start_id = update.message.reply_to_message.message_id
         end_id = update.message.message_id
-        await update.message.delete() # Command message delete karo
+        await update.message.delete() 
         
         deleted_count = 0
         for msg_id in range(end_id, start_id - 1, -1):
@@ -239,9 +236,7 @@ async def purge(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except:
                 pass
         
-        # Confirm message bhejo (thodi der baad)
         msg = await context.bot.send_message(update.effective_chat.id, f"🗑️ {deleted_count} messages delete kiye gaye.")
-        # Confirm ko bhi 3 sec baad delete karo
         import asyncio
         await asyncio.sleep(3)
         await msg.delete()
@@ -325,13 +320,11 @@ if __name__ == "__main__":
     application.add_handler(CommandHandler("lock", lock))
     application.add_handler(CommandHandler("unlock", unlock))
 
-    # Auto Delete Handler (Punish Logic) - Priority -1 taaki ye sabse pehle check kare
-    # Lekin humein messages delete karne hain, isliye MessageHandler use karenge
-    # Filters.ALL se har message pe chalega
+    # Auto Delete Handler (Punish Logic) - Priority -1
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, auto_delete_handler), group=-1)
 
     # Webhook setup
     application.bot.set_webhook(url=WEBHOOK_URL)
     
     # Run Flask
-    app.run(host="0.0.0.0", port=PORT)
+    app.run(host="0.0.0.0", port=PORT, debug=True)
